@@ -1,0 +1,32 @@
+cmake_minimum_required(VERSION 3.10)
+project(stack_overflow_detection LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+option(USE_MINGW "Enable MinGW-specific settings" OFF)
+option(USE_MSVC "Enable MSVC-specific settings" OFF)
+
+if(USE_MINGW AND USE_MSVC)
+    message(FATAL_ERROR "Cannot enable both USE_MINGW and USE_MSVC simultaneously.")
+endif()
+
+add_executable(stack_overflow main.cpp)
+
+if(WIN32)
+    if(USE_MINGW OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        message(STATUS "Configuring for MinGW")
+        target_link_options(stack_overflow PRIVATE -Wl,--stack=1048576)
+    elseif(USE_MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+        message(STATUS "Configuring for MSVC")
+        target_compile_options(stack_overflow PRIVATE /EHsc /W4)
+        target_link_options(stack_overflow PRIVATE /STACK:1048576)
+    else()
+        message(WARNING "Unknown Windows compiler. Applying default settings.")
+        target_compile_options(stack_overflow PRIVATE /EHsc)
+        target_link_options(stack_overflow PRIVATE /STACK:1048576)
+    endif()
+else()
+    message(STATUS "Configuring for Linux/MacOS")
+    target_compile_definitions(stack_overflow PRIVATE _POSIX_C_SOURCE=200809L)
+endif()
