@@ -4,7 +4,6 @@
 This project demonstrates stack overflow conditions by deliberately causing them in two different ways: using a large fixed-size array allocation and through recursive function calls. It provides insights into stack memory limitations across different platforms and how these limitations manifest when exceeded.
 
 ## Build & Run
-
 Clone the repository:
 ```bash
 git clone https://github.com/yourusername/stack_overflow_detection.git
@@ -26,64 +25,80 @@ Run the executable with desired mode:
 ./build/stack_overflow --recursive
 ```
 
+## Testing Modes
+
+### Fixed Array Test (--fixed)
+This mode attempts to allocate arrays of increasing sizes directly on the stack:
+- Tests allocation sizes from 500KB to 8MB
+- When allocation exceeds stack limit (typically 1MB on Windows, 8MB on Linux), stack overflow occurs
+- Exception/signal handlers catch the overflow condition instead of crashing
+
+### Recursive Test (--recursive)
+This mode causes stack overflow through deep function call recursion:
+- Tests recursion depths of 10,000, 50,000, and 100,000 calls
+- For each depth, tests three allocation scenarios:
+  - No additional allocation (`rec_size = 0`)
+  - 5KB array per recursive call (`rec_size = 5000`)
+  - 10KB array per recursive call (`rec_size = 10000`)
+- Tracks total stack usage throughout recursion
+
 ## Example Output
 
 ### Fixed Array Test
 ```
 Windows: Stack ~1MB (linker-configurable).
 Running --fixed test:
-Trying  500000  bytes... Fixed: Allocated  500000  bytes.
-Trying  1000000  bytes... Fixed: Allocated  1000000  bytes.
-Trying  2000000  bytes... 
+Trying 500000 bytes... Fixed: Allocated 500000 bytes.
+Trying 1000000 bytes... Fixed: Allocated 1000000 bytes.
+Trying 2000000 bytes... Error: Stack overflow
+Trying 4000000 bytes... Error: Stack overflow
+Trying 8000000 bytes... Error: Stack overflow
+
+Test done.
 ```
 
 ### Recursive Test
 ```
-Recursion: Depth  1017 ,  5000  bytes.
-Recursion: Depth  1016 ,  5000  bytes.
-Recursion: Depth  1015 ,  5000  bytes.
-Recursion: Depth  1014 ,  5000  bytes.
-Recursion: Depth  1013 ,  5000  bytes.
-...
-Recursion: Depth  15 ,  5000  bytes.
-Recursion: Depth  14 ,  5000  bytes.
-Recursion: Depth  13 ,  5000  bytes.
-Recursion: Depth  12 ,  5000  bytes.
-Recursion: Depth  11 ,  5000  bytes.
-Recursion: Depth  10 ,  5000  bytes.
-Recursion: Depth  9 ,  5000  bytes.
-Recursion: Depth  8 ,  5000  bytes.
-Recursion: Depth  7 ,  5000  bytes.
-Recursion: Depth  6 ,  5000  bytes.
-Recursion: Depth  5 ,  5000  bytes.
-Recursion: Depth  4 ,  5000  bytes.
-Recursion: Depth  3 ,  5000  bytes.
-Recursion: Depth  2 ,  5000  bytes.
-Recursion: Depth  1 ,  5000  bytes.
+Stack limit: 8388608 bytes
+Running --recursive test:
+Trying depth 10000, 0 bytes... Recursion: Depth 10000, 0 bytes, Total: 320000 bytes.
+Recursion: Depth 9999, 0 bytes, Total: 319968 bytes.
+[... output truncated ...]
+Recursion: Depth 1, 0 bytes, Total: 32 bytes.
 Recursion: Completed.
+
+Trying depth 10000, 5000 bytes... Recursion: Depth 10000, 5000 bytes, Total: 50320000 bytes.
+Error: Stack limit exceeded
+
+Trying depth 50000, 0 bytes... Recursion: Depth 50000, 0 bytes, Total: 1600000 bytes.
+[... output truncated ...]
+Recursion: Completed.
+
+Test done.
 ```
 
-## Explanation
+## Stack Overflow Mechanics
 
-This program demonstrates stack overflow conditions in two different ways:
+### Stack Memory Limitations
+- Stack memory is limited by OS/platform settings (typically 1MB on Windows, 8MB on Linux)
+- Each thread has its own stack allocation
+- Stack space is used for function parameters, return addresses, and local variables
 
-### Fixed Array Method
-The program attempts to allocate arrays of increasing sizes directly on the stack. Stack memory is limited (typically 1MB on Windows and 8MB on Linux by default), so when the array size exceeds this limit, a stack overflow occurs.
+### Why Recursion Doesn't Always Trigger Stack Overflow
+Interestingly, deep recursion doesn't always cause stack overflow, especially with minimal local variables. You may observe the program successfully completing thousands or even tens of thousands of recursive calls without error.
 
-The program uses a signal handler (on Unix-like systems) or an exception handler (on Windows) to catch the stack overflow condition and report it instead of crashing.
+This happens because:
 
-### Recursive Method
-This approach causes stack overflow through deep function call recursion. Each function call adds a new stack frame, which consumes stack space. The program tests two variations:
+1. **Minimal Stack Frame Size**: When no additional arrays are allocated (`rec_size = 0`), each stack frame may only consume 16-32 bytes (just function parameters, return address, and frame pointers).
 
-1. Recursion with no additional array allocation (`rec_size = 0`)
-2. Recursion with a 5000-byte array allocated at each level (`rec_size = 5000`)
+2. **Compiler Optimizations**: Modern compilers may implement partial optimizations that reduce stack usage, even when full tail call optimization is prevented.
 
-Interestingly, you may notice that the recursive test with `rec_size = 0` doesn't always trigger a stack overflow, especially at moderate recursion depths. This happens because:
+3. **Stack Growth Direction**: Stack typically grows downward in memory, which allows the OS to detect overflow situations before critical memory is corrupted.
 
-1. **Minimal Stack Usage**: When not allocating additional arrays in each recursive call, each stack frame is relatively small, containing only the function parameters, return address, and minimal housekeeping data.
-   
-2. **Compiler Behavior**: Even in Debug mode, compilers manage function calls efficiently. While not implementing full Tail Call Optimization (TCO), modern compilers may still optimize how stack frames are managed.
+4. **Stack Reserve vs. Commit**: On Windows, stack memory is often reserved but not committed until needed, allowing programs to appear to have larger stack space than actually available.
 
-3. **Stack Frame Structure**: The minimal recursive function without local array allocation creates very lightweight stack frames, allowing for deeper recursion before hitting stack limits.
+## Platform-Specific Handling
 
-When using `rec_size = 5000`, stack overflow occurs much more quickly as each recursive call adds a substantial amount of data to the stack.
+The program implements platform-specific mechanisms for handling stack overflow:
+- **Windows**: Uses `SetUnhandledExceptionFilter` to catch `EXCEPTION_STACK_OVERFLOW`
+- **Unix-like Systems**: Uses signal handlers with `sigaltstack` to catch `SIGSEGV` caused by stack overflow
